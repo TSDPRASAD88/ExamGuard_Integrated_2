@@ -1,14 +1,15 @@
-import { useState, useEffect, useCallback } from "react"; // ✅ added useCallback
-import useProctoring from "./hooks/useProctoring";
+import { useState, useEffect, useCallback } from "react";
+import useProctoring, { enterFullscreen, isFullscreen } from "./hooks/useProctoring";
 
 function App() {
   const [started, setStarted] = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const [violationScore, setViolationScore] = useState(0);
+  const [fullscreenWarning, setFullscreenWarning] = useState(false); // ✅ NEW
 
   const getToken = () => localStorage.getItem("token");
 
-  // 🔹 Restore session OR clean stale data
+  // 🔹 Restore session on page reload
   useEffect(() => {
     const savedSession = localStorage.getItem("sessionId");
     const token = getToken();
@@ -16,6 +17,7 @@ function App() {
     if (savedSession && token) {
       setSessionId(savedSession);
       setStarted(true);
+      enterFullscreen().catch(() => {});
 
       if (window.chrome && chrome.storage) {
         chrome.storage.local.set({ token, sessionId: savedSession });
@@ -38,6 +40,14 @@ function App() {
       return;
     }
 
+    // ✅ Enter fullscreen first — must be triggered by user click (browser rule)
+    try {
+      await enterFullscreen();
+    } catch (err) {
+      alert("❌ Fullscreen is required to start the exam. Please allow fullscreen.");
+      return;
+    }
+
     try {
       const res = await fetch("http://localhost:8080/api/session/start", {
         method: "POST",
@@ -56,6 +66,7 @@ function App() {
         setSessionId(newSessionId);
         localStorage.setItem("sessionId", newSessionId);
         setViolationScore(0);
+        setFullscreenWarning(false);
         setStarted(true);
 
         if (window.chrome && chrome.storage) {
@@ -63,19 +74,23 @@ function App() {
         }
       } else {
         alert(data.message);
+        if (document.exitFullscreen) document.exitFullscreen();
       }
     } catch (error) {
       console.error("Start Session Error:", error);
+      if (document.exitFullscreen) document.exitFullscreen();
     }
   };
 
   // 🔹 END SESSION
-  // ✅ FIX: useCallback ensures the auto-terminate useEffect always
-  // calls endSession with the latest sessionId, not a stale closure.
   const endSession = useCallback(async () => {
     const token = getToken();
-
     if (!sessionId || !token) return;
+
+    // Exit fullscreen cleanly when exam ends
+    if (isFullscreen() && document.exitFullscreen) {
+      document.exitFullscreen().catch(() => {});
+    }
 
     try {
       await fetch("http://localhost:8080/api/session/end", {
@@ -95,38 +110,83 @@ function App() {
         console.log("🛑 Extension storage cleared");
       });
     }
-  }, [sessionId]); // ✅ recreates only when sessionId changes
+  }, [sessionId]);
 
-  // 🔹 PROCTORING
+  // ✅ Handler for the "Return to Fullscreen" button
+  // This IS a user gesture so requestFullscreen works here
+  const handleReturnFullscreen = async () => {
+    try {
+      await enterFullscreen();
+      setFullscreenWarning(false);
+    } catch (err) {
+      alert("❌ Could not enter fullscreen. Please click the button again.");
+    }
+  };
+
+  // 🔹 PROCTORING HOOK
   const token = getToken();
-  useProctoring(sessionId, token, setViolationScore, started);
+  useProctoring(sessionId, token, setViolationScore, started, setFullscreenWarning);
 
   // 🔥 AUTO TERMINATE
-  // ✅ FIX: endSession replaces sessionId in deps — it already captures sessionId inside
   useEffect(() => {
     if (violationScore >= 10 && started) {
       alert("❌ Exam terminated due to cheating!");
-
       endSession();
-
       setStarted(false);
       setSessionId(null);
       setViolationScore(0);
+      setFullscreenWarning(false);
       localStorage.removeItem("sessionId");
     }
-  }, [violationScore, started, endSession]); // ✅ was [violationScore, started, sessionId]
+  }, [violationScore, started, endSession]);
 
   return (
     <div style={{ padding: "20px" }}>
+
+      {/* ✅ FULLSCREEN WARNING BANNER */}
+      {fullscreenWarning && (
+        <div style={{
+          position: "fixed",
+          top: 0, left: 0, right: 0,
+          background: "#ff4444",
+          color: "white",
+          padding: "16px",
+          textAlign: "center",
+          zIndex: 9999,
+          fontSize: "16px",
+          fontWeight: "bold",
+        }}>
+          ⚠️ You exited fullscreen! Return immediately or your exam will be terminated.
+          <button
+            onClick={handleReturnFullscreen}
+            style={{
+              marginLeft: "16px",
+              padding: "8px 16px",
+              background: "white",
+              color: "#ff4444",
+              border: "none",
+              borderRadius: "6px",
+              fontWeight: "bold",
+              cursor: "pointer",
+            }}
+          >
+            Return to Fullscreen
+          </button>
+        </div>
+      )}
+
       {!started ? (
         <>
           <h1>Start Exam</h1>
+          <p style={{ color: "#888", fontSize: "14px" }}>
+            📌 Fullscreen is required. Your activity will be monitored.
+          </p>
           <button onClick={startSession}>Start Exam</button>
         </>
       ) : (
         <>
           <h1>Exam in Progress</h1>
-          <p>Do not switch tabs 😐</p>
+          <p>Do not switch tabs or exit fullscreen 😐</p>
           <p style={{ color: "red", fontWeight: "bold" }}>
             Score: {violationScore} / 10
           </p>

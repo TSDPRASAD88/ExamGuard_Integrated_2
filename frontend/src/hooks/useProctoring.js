@@ -1,10 +1,27 @@
 import { useEffect, useRef } from "react";
 import { logViolation } from "../api/violation";
 
-const useProctoring = (sessionId, token, setViolationScore, isActive) => {
+// ✅ Cross-browser fullscreen enter
+export const enterFullscreen = () => {
+  const el = document.documentElement;
+  if (el.requestFullscreen) return el.requestFullscreen();
+  if (el.webkitRequestFullscreen) return el.webkitRequestFullscreen();
+  if (el.mozRequestFullScreen) return el.mozRequestFullScreen();
+  if (el.msRequestFullscreen) return el.msRequestFullscreen();
+};
+
+// ✅ Check if currently fullscreen
+export const isFullscreen = () =>
+  !!(
+    document.fullscreenElement ||
+    document.webkitFullscreenElement ||
+    document.mozFullScreenElement ||
+    document.msFullscreenElement
+  );
+
+const useProctoring = (sessionId, token, setViolationScore, isActive, setFullscreenWarning) => {
   const activeRef = useRef(isActive);
 
-  // ✅ Keep latest isActive in ref so event handlers always see current value
   useEffect(() => {
     activeRef.current = isActive;
   }, [isActive]);
@@ -12,74 +29,80 @@ const useProctoring = (sessionId, token, setViolationScore, isActive) => {
   useEffect(() => {
     if (!sessionId || !token || !isActive) return;
 
-    // ✅ FIX: debounce flag — prevents blur + visibilitychange both firing on same tab switch
-    // When user switches tab: visibilitychange fires first (+3), then blur fires.
-    // Without this flag both would fire, charging +5 for a single tab switch.
     const tabSwitchRef = { current: false };
+    const fullscreenExitRef = { current: false };
 
     const increaseViolation = (points) => {
       if (!activeRef.current) return;
       setViolationScore((prev) => prev + points);
     };
 
-    // TAB SWITCH (HIGH SEVERITY)
+    // ─── TAB SWITCH (severity 3) ────────────────────────────────────────────
     const handleVisibility = () => {
       if (!activeRef.current) return;
-
       if (document.hidden) {
-        // ✅ Set flag so handleBlur knows this was a tab switch, not a standalone blur
         tabSwitchRef.current = true;
         setTimeout(() => { tabSwitchRef.current = false; }, 500);
 
         alert("⚠️ Tab switching detected!");
         increaseViolation(3);
-
-        logViolation(
-          { sessionId, type: "tab_switch", severity: 3 },
-          token
-        );
+        logViolation({ sessionId, type: "tab_switch", severity: 3 }, token);
       }
     };
 
-    // WINDOW BLUR (MEDIUM) — only fires if NOT caused by a tab switch
+    // ─── WINDOW BLUR (severity 2) ────────────────────────────────────────────
     const handleBlur = () => {
       if (!activeRef.current) return;
-
-      // ✅ Skip if this blur was triggered by a tab switch (already logged above)
       if (tabSwitchRef.current) return;
+      if (fullscreenExitRef.current) return;
 
       increaseViolation(2);
-
-      logViolation(
-        { sessionId, type: "window_blur", severity: 2 },
-        token
-      );
+      logViolation({ sessionId, type: "window_blur", severity: 2 }, token);
     };
 
-    // COPY (MEDIUM)
+    // ─── COPY (severity 2) ───────────────────────────────────────────────────
     const handleCopy = () => {
       if (!activeRef.current) return;
-
       increaseViolation(2);
-
-      logViolation(
-        { sessionId, type: "copy_paste", severity: 2 },
-        token
-      );
+      logViolation({ sessionId, type: "copy_paste", severity: 2 }, token);
     };
 
-    // ✅ Attach listeners only when active
+    // ─── FULLSCREEN EXIT (severity 3) ────────────────────────────────────────
+    const handleFullscreenChange = () => {
+      if (!activeRef.current) return;
+
+      if (!isFullscreen()) {
+        // Set debounce flag so blur doesn't double-count
+        fullscreenExitRef.current = true;
+        setTimeout(() => { fullscreenExitRef.current = false; }, 500);
+
+        increaseViolation(3);
+        logViolation({ sessionId, type: "fullscreen_exit", severity: 3 }, token);
+
+        // ✅ Show warning banner in UI — user must click button to return
+        // We cannot call requestFullscreen() here (not a user gesture)
+        setFullscreenWarning(true);
+      } else {
+        // User returned to fullscreen — hide the warning
+        setFullscreenWarning(false);
+      }
+    };
+
+    // ─── Attach listeners ────────────────────────────────────────────────────
     document.addEventListener("visibilitychange", handleVisibility);
     window.addEventListener("blur", handleBlur);
     document.addEventListener("copy", handleCopy);
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
 
-    // ✅ Cleanup on unmount or when session/active state changes
     return () => {
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("blur", handleBlur);
       document.removeEventListener("copy", handleCopy);
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      document.removeEventListener("webkitfullscreenchange", handleFullscreenChange);
     };
-  }, [sessionId, token, isActive, setViolationScore]);
+  }, [sessionId, token, isActive, setViolationScore, setFullscreenWarning]);
 };
 
 export default useProctoring;

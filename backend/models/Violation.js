@@ -15,12 +15,13 @@ const violationSchema = new mongoose.Schema(
         "no_face",
         "multiple_faces",
         "window_blur",
+        "fullscreen_exit",   // ✅ NEW — fired when user exits fullscreen
       ],
       required: true,
     },
     severity: {
       type: Number,
-      default: 1, // 1 = low, 5 = high
+      default: 1,
     },
     timestamp: {
       type: Date,

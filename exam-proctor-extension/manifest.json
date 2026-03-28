@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Exam Proctor",
+  "version": "1.0",
+  "description": "Monitor tab switching during exams",
+
+  "permissions": [
+    "tabs",
+    "storage"
+  ],
+
+  "background": {
+    "service_worker": "background.js"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["http://localhost:5173/*"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+
+  "host_permissions": [
+    "http://localhost:8080/*",
+    "http://localhost:5173/*"
+  ]
+}

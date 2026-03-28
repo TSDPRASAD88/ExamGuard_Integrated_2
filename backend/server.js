@@ -8,6 +8,9 @@ require("dotenv").config();
 app.use(cors());
 app.use(express.json());
 const testRoutes = require("./routes/testRoutes");
+const sessionRoutes = require("./routes/sessionRoutes");
+const violationRoutes = require("./routes/violationRoutes");
+
 
 // Routes
 app.get("/", (req, res) => {
@@ -18,7 +21,8 @@ app.get("/", (req, res) => {
 });
 app.use("/api/auth", authRoutes);
 app.use("/api/test", testRoutes);
-
+app.use("/api/session", sessionRoutes);
+app.use("/api/violation", violationRoutes);
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({

@@ -1,16 +1,19 @@
-const authRoutes = require("./routes/authRoutes");
+require("dotenv").config(); // ✅ MUST be first — loads env before anything else reads it
+
 const express = require("express");
 const cors = require("cors");
 const connectDB = require("./config/db");
-const app = express();
-require("dotenv").config();
-// Middleware
-app.use(cors());
-app.use(express.json());
+
+const authRoutes = require("./routes/authRoutes");
 const testRoutes = require("./routes/testRoutes");
 const sessionRoutes = require("./routes/sessionRoutes");
 const violationRoutes = require("./routes/violationRoutes");
 
+const app = express();
+
+// Middleware
+app.use(cors());
+app.use(express.json());
 
 // Routes
 app.get("/", (req, res) => {
@@ -19,10 +22,12 @@ app.get("/", (req, res) => {
     message: "Backend is running 🚀",
   });
 });
+
 app.use("/api/auth", authRoutes);
 app.use("/api/test", testRoutes);
 app.use("/api/session", sessionRoutes);
 app.use("/api/violation", violationRoutes);
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({
@@ -31,9 +36,7 @@ app.use((req, res) => {
   });
 });
 
-
-
-// Error handler
+// Global error handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({
@@ -41,7 +44,6 @@ app.use((err, req, res, next) => {
     message: "Internal Server Error",
   });
 });
-
 
 // Start server AFTER DB connection
 const PORT = process.env.PORT || 8080;
